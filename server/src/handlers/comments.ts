@@ -1,61 +1,133 @@
+import { db } from '../db';
+import { commentsTable, postsTable } from '../db/schema';
 import { type CreateCommentInput, type UpdateCommentStatusInput, type Comment, type IdInput } from '../schema';
+import { eq, and } from 'drizzle-orm';
 
 export async function createComment(input: CreateCommentInput): Promise<Comment> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to create a new comment for a blog post.
-    // Comments should be set to not approved by default for moderation.
-    return Promise.resolve({
-        id: 1,
+  try {
+    // Verify the post exists first
+    const post = await db.select()
+      .from(postsTable)
+      .where(eq(postsTable.id, input.post_id))
+      .execute();
+
+    if (post.length === 0) {
+      throw new Error('Post not found');
+    }
+
+    // Insert comment record - comments are not approved by default for moderation
+    const result = await db.insert(commentsTable)
+      .values({
         post_id: input.post_id,
         author_name: input.author_name,
         author_email: input.author_email,
         content: input.content,
-        is_approved: false, // Comments require approval by default
-        created_at: new Date(),
-        updated_at: new Date()
-    });
+        is_approved: false // Comments require approval by default
+      })
+      .returning()
+      .execute();
+
+    return result[0];
+  } catch (error) {
+    console.error('Comment creation failed:', error);
+    throw error;
+  }
 }
 
 export async function updateCommentStatus(input: UpdateCommentStatusInput): Promise<Comment> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to approve or disapprove a comment.
-    // Only admin users should be able to perform this action.
-    return Promise.resolve({
-        id: input.id,
-        post_id: 1,
-        author_name: 'John Doe',
-        author_email: 'john@example.com',
-        content: 'This is a comment',
+  try {
+    // Update comment approval status
+    const result = await db.update(commentsTable)
+      .set({ 
         is_approved: input.is_approved,
-        created_at: new Date(),
         updated_at: new Date()
-    });
+      })
+      .where(eq(commentsTable.id, input.id))
+      .returning()
+      .execute();
+
+    if (result.length === 0) {
+      throw new Error('Comment not found');
+    }
+
+    return result[0];
+  } catch (error) {
+    console.error('Comment status update failed:', error);
+    throw error;
+  }
 }
 
 export async function deleteComment(input: IdInput): Promise<{ success: boolean }> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to delete a comment from the database.
-    // Only admin users should be able to perform this action.
-    return Promise.resolve({ success: true });
+  try {
+    const result = await db.delete(commentsTable)
+      .where(eq(commentsTable.id, input.id))
+      .returning()
+      .execute();
+
+    if (result.length === 0) {
+      throw new Error('Comment not found');
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Comment deletion failed:', error);
+    throw error;
+  }
 }
 
 export async function getPostComments(input: IdInput): Promise<Comment[]> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to fetch all approved comments for a specific post.
-    // For public viewing, only approved comments should be returned.
-    return Promise.resolve([]);
+  try {
+    // Verify the post exists first
+    const post = await db.select()
+      .from(postsTable)
+      .where(eq(postsTable.id, input.id))
+      .execute();
+
+    if (post.length === 0) {
+      throw new Error('Post not found');
+    }
+
+    // Fetch only approved comments for public viewing
+    const comments = await db.select()
+      .from(commentsTable)
+      .where(and(
+        eq(commentsTable.post_id, input.id),
+        eq(commentsTable.is_approved, true)
+      ))
+      .execute();
+
+    return comments;
+  } catch (error) {
+    console.error('Fetching post comments failed:', error);
+    throw error;
+  }
 }
 
 export async function getAllComments(): Promise<Comment[]> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to fetch all comments (approved and pending) for admin.
-    // This should include moderation status for admin dashboard.
-    return Promise.resolve([]);
+  try {
+    // Fetch all comments (approved and pending) for admin dashboard
+    const comments = await db.select()
+      .from(commentsTable)
+      .execute();
+
+    return comments;
+  } catch (error) {
+    console.error('Fetching all comments failed:', error);
+    throw error;
+  }
 }
 
 export async function getPendingComments(): Promise<Comment[]> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to fetch all comments pending approval for admin.
-    // This is useful for the admin moderation interface.
-    return Promise.resolve([]);
+  try {
+    // Fetch only comments pending approval for admin moderation
+    const comments = await db.select()
+      .from(commentsTable)
+      .where(eq(commentsTable.is_approved, false))
+      .execute();
+
+    return comments;
+  } catch (error) {
+    console.error('Fetching pending comments failed:', error);
+    throw error;
+  }
 }

@@ -1,16 +1,72 @@
+import { db } from '../db';
+import { pagesTable } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { type CreatePageInput, type UpdatePageInput, type Page, type IdInput, type SlugInput } from '../schema';
 
+// Helper function to generate a slug from title
+function generateSlug(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+    .replace(/^-|-$/g, ''); // Remove leading/trailing hyphens
+  
+  // If slug is empty after processing, generate a fallback
+  return slug || 'page';
+}
+
+// Helper function to ensure unique slug
+async function ensureUniqueSlug(baseSlug: string): Promise<string> {
+  let slug = baseSlug;
+  let counter = 1;
+  
+  while (true) {
+    try {
+      // Try to create the page with this slug first to handle race conditions
+      const existingPage = await db.select()
+        .from(pagesTable)
+        .where(eq(pagesTable.slug, slug))
+        .limit(1)
+        .execute();
+        
+      if (existingPage.length === 0) {
+        return slug;
+      }
+      
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+    } catch (error) {
+      // If there's an error checking, increment and try again
+      slug = `${baseSlug}-${counter}`;
+      counter++;
+      
+      // Prevent infinite loops
+      if (counter > 100) {
+        throw new Error('Could not generate unique slug after 100 attempts');
+      }
+    }
+  }
+}
+
 export async function createPage(input: CreatePageInput): Promise<Page> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to create a new page with SEO and OG metadata.
-    // It should generate a unique slug from the title and save to the database.
-    return Promise.resolve({
-        id: 1,
+  try {
+    // Generate unique slug from title
+    const baseSlug = generateSlug(input.title);
+    const uniqueSlug = await ensureUniqueSlug(baseSlug);
+
+    // Set published_at if status is published
+    const publishedAt = input.status === 'published' ? new Date() : null;
+
+    // Insert page record
+    const result = await db.insert(pagesTable)
+      .values({
         title: input.title,
-        slug: 'generated-page-slug',
+        slug: uniqueSlug,
         content: input.content,
         status: input.status,
-        published_at: input.status === 'published' ? new Date() : null,
+        published_at: publishedAt,
         scheduled_at: input.scheduled_at || null,
         seo_title: input.seo_title || null,
         seo_description: input.seo_description || null,
@@ -20,9 +76,15 @@ export async function createPage(input: CreatePageInput): Promise<Page> {
         og_image_url: input.og_image_url || null,
         og_type: input.og_type || null,
         og_url: input.og_url || null,
-        created_at: new Date(),
-        updated_at: new Date()
-    });
+      })
+      .returning()
+      .execute();
+
+    return result[0];
+  } catch (error) {
+    console.error('Page creation failed:', error);
+    throw error;
+  }
 }
 
 export async function updatePage(input: UpdatePageInput): Promise<Page> {

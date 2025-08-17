@@ -1,17 +1,57 @@
+import { db } from '../db';
+import { postsTable } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { type CreatePostInput, type UpdatePostInput, type Post, type IdInput, type SlugInput } from '../schema';
 
+// Helper function to generate a URL-friendly slug from title
+function generateSlug(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+}
+
+// Helper function to ensure slug uniqueness
+async function generateUniqueSlug(baseSlug: string): Promise<string> {
+  let slug = baseSlug;
+  let counter = 1;
+  
+  while (true) {
+    const existingPost = await db.select()
+      .from(postsTable)
+      .where(eq(postsTable.slug, slug))
+      .limit(1)
+      .execute();
+    
+    if (existingPost.length === 0) {
+      return slug;
+    }
+    
+    slug = `${baseSlug}-${counter}`;
+    counter++;
+  }
+}
+
 export async function createPost(input: CreatePostInput): Promise<Post> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is to create a new blog post with SEO and OG metadata.
-    // It should generate a unique slug from the title and save to the database.
-    return Promise.resolve({
-        id: 1,
+  try {
+    // Generate unique slug from title
+    const baseSlug = generateSlug(input.title);
+    const uniqueSlug = await generateUniqueSlug(baseSlug);
+    
+    // Set published_at if status is published
+    const publishedAt = input.status === 'published' ? new Date() : null;
+    
+    // Insert post record
+    const result = await db.insert(postsTable)
+      .values({
         title: input.title,
-        slug: 'generated-slug',
+        slug: uniqueSlug,
         content: input.content,
         excerpt: input.excerpt || null,
         status: input.status,
-        published_at: input.status === 'published' ? new Date() : null,
+        published_at: publishedAt,
         scheduled_at: input.scheduled_at || null,
         seo_title: input.seo_title || null,
         seo_description: input.seo_description || null,
@@ -20,10 +60,16 @@ export async function createPost(input: CreatePostInput): Promise<Post> {
         og_description: input.og_description || null,
         og_image_url: input.og_image_url || null,
         og_type: input.og_type || null,
-        og_url: input.og_url || null,
-        created_at: new Date(),
-        updated_at: new Date()
-    });
+        og_url: input.og_url || null
+      })
+      .returning()
+      .execute();
+
+    return result[0];
+  } catch (error) {
+    console.error('Post creation failed:', error);
+    throw error;
+  }
 }
 
 export async function updatePost(input: UpdatePostInput): Promise<Post> {
